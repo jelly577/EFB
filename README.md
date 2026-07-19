@@ -16,6 +16,8 @@
 | Power (p^α) 接受规则 | ✅ 完成 | `(α−1)Δ` 规则 + 答案护栏，变长玩具分布上收敛到 p^α |
 | 准确率下降根因修复 | ✅ 已 GPU 复跑验证 | q1 翻转由等长后缀截断引起；修复后准确率回到 60% |
 | 5 题 α=4 修复版复跑 | ✅ 完成 | 两方法准确率 60%=初始准确率，自适应仍省 27.5% token |
+| 完整性护栏 + 官方 CoT prompt | ✅ 完成 | 未自然终止的候选直接拒绝；prompt 走 chat template |
+| 5 题新 prompt 复跑（v2） | ✅ 完成 | 暴露 base 模型"答完不停"失效模式，真实正确率 80%，判分 40%；待换 Instruct 模型重建基线 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
@@ -24,7 +26,7 @@
 | 500 题完整实验 | ⏳ 未运行 | 当前没有全量结果，不能作最终统计结论 |
 | 难点优先真实模型实验 | ⏳ 未运行 | 需先确认完整 Metropolis-Hastings 接受概率 |
 
-GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary generation`）。GPU 结果、图表和最新 PDF 均为本地产物，受 `.gitignore` 或尚未提交状态影响；本次文档更新也需要后续提交后才会同步到远端。
+GitHub 主分支目前同步到提交 `8eda4df`（`Add completeness guard and official CoT prompt`）。GPU 结果、图表和最新 PDF 均为本地产物，受 `.gitignore` 或尚未提交状态影响；本次文档更新也需要后续提交后才会同步到远端。
 
 ## 5 题 GPU 冒烟结果
 
@@ -68,6 +70,24 @@ GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary gene
 
 详细报告：[`output/pdf/EFB_B同学_α4修复版复跑报告.pdf`](output/pdf/EFB_B同学_α4修复版复跑报告.pdf)
 
+## 5 题新 prompt + 完整性护栏复跑结果（v2）
+
+代码 `8eda4df` 在同一 4090 复跑（α=4、steps=8、seed 配对同上），改动：官方 Qwen CoT system prompt 经 chat template、完整性护栏。全程仅 6 分钟——官方 prompt 使生成大幅变短（平均初始 645 token）。
+
+| 方法 | 判分准确率 | 平均总 token | 平均被拒 token | 接受率 | 平均耗时/题 | 提前停止率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 普通初始生成 | 40% | 645.4 | — | — | — | — |
+| 固定 8 次 | 40% | 1446.2 | 713.6 | 22.5% | 38.06 秒 | 0% |
+| 自适应停止 | 40% | 1221.6 | 503.0 | 19.0% | 31.08 秒 | 60% |
+
+v2 复跑主要结论：
+
+- **暴露新的判分失效模式**：Qwen2.5-Math-7B 是 **base 模型**，官方零样本 chat prompt 是 Instruct 版协议；base 模型不会在 `<|im_end|>` 停止，答完正确答案后继续自编新题自问自答，"取最后一个 `\boxed{}`"取到自编题的答案。q3（`\boxed{14/3}` 在中段）、q4（第一个框即 `\boxed{9}`）实际都做对了，**真实数学正确率 4/5=80%，判分 40% 严重低估**。
+- q5 仍是模型真实错误（伪造 ```output 块宣称 Carla；重采样翻成 Angela，仍错），与 α=4 复跑结论一致：错误源头在重采样窗口之前，方法无法修复。
+- 完整性护栏正确工作：q3/q4 各拦下 7/8 个未自然终止的候选（"题目接龙"文本让 128 token 后缀几乎无法自然收尾），防止不完整候选进入链，但也使接受率降至 ~20%。
+- 重采样依旧不破坏任何初始正确答案；自适应省 15.5% token、18.3% 时间。
+- **下一步**：换 `Qwen/Qwen2.5-Math-7B-Instruct`（首选）或 base + few-shot 官方协议，解决"停不下来"后重建 5 题基线。
+
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
 ## 实验产物
@@ -82,6 +102,9 @@ results/fixed_5_alpha4.jsonl         5 题固定版 α=4 修复版复跑
 results/adaptive_5_alpha4.jsonl      5 题自适应版 α=4 修复版复跑
 results/alpha4_summary.json          α=4 复跑汇总指标
 results/alpha4_answer_review.md      5 题人工复核清单（题目/官方答案/模型答案/全文）
+results/fixed_5_v2.jsonl             5 题固定版新 prompt+护栏复跑（v2）
+results/adaptive_5_v2.jsonl          5 题自适应版新 prompt+护栏复跑（v2）
+results/v2_summary.json              v2 复跑汇总指标
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
