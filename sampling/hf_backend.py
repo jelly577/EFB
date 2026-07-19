@@ -27,6 +27,11 @@ class HuggingFaceBackend:
             device_map="auto",
         )
         self.model.eval()
+        stop_ids = {self.tokenizer.eos_token_id}
+        im_end = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if im_end is not None and im_end != self.tokenizer.unk_token_id:
+            stop_ids.add(im_end)
+        self.stop_token_ids = sorted(tid for tid in stop_ids if tid is not None)
         self.reseed(seed)
 
     @property
@@ -55,6 +60,22 @@ class HuggingFaceBackend:
     def token_count(self, text: str) -> int:
         return int(self._continuation_ids(text).shape[1])
 
+    def build_chat_prompt(self, system: str, user: str) -> str:
+        return self.tokenizer.apply_chat_template(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+    def _ended_naturally(self, generated_ids: Any, max_new_tokens: int) -> bool:
+        length = int(generated_ids.shape[0])
+        if length < max_new_tokens:
+            return True
+        return length > 0 and int(generated_ids[-1].item()) in self.stop_token_ids
+
     def generate_initial(self, prompt: str, max_new_tokens: int) -> GeneratedText:
         prompt_ids = self._prompt_ids(prompt)
         output = self.model.generate(
@@ -62,11 +83,16 @@ class HuggingFaceBackend:
             max_new_tokens=max_new_tokens,
             do_sample=True,
             temperature=self.temperature,
+            eos_token_id=self.stop_token_ids,
             pad_token_id=self.tokenizer.eos_token_id,
         )
         continuation_ids = output[0, prompt_ids.shape[1] :]
         text = self.tokenizer.decode(continuation_ids, skip_special_tokens=True)
-        return GeneratedText(text=text, token_count=int(continuation_ids.shape[0]))
+        return GeneratedText(
+            text=text,
+            token_count=int(continuation_ids.shape[0]),
+            ended_naturally=self._ended_naturally(continuation_ids, max_new_tokens),
+        )
 
     def score(self, prompt: str, continuation: str) -> float:
         token_scores = self.token_log_probabilities(prompt, continuation)
@@ -120,9 +146,14 @@ class HuggingFaceBackend:
             max_new_tokens=max_new_tokens,
             do_sample=True,
             temperature=self.temperature,
+            eos_token_id=self.stop_token_ids,
             pad_token_id=self.tokenizer.eos_token_id,
         )
         new_suffix = output[:, model_input.shape[1] :]
         proposed_ids = self.torch.cat((kept_prefix, new_suffix), dim=1)[0]
         text = self.tokenizer.decode(proposed_ids, skip_special_tokens=True)
-        return GeneratedText(text=text, token_count=int(new_suffix.shape[1]))
+        return GeneratedText(
+            text=text,
+            token_count=int(new_suffix.shape[1]),
+            ended_naturally=self._ended_naturally(new_suffix[0], max_new_tokens),
+        )

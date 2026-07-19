@@ -59,6 +59,7 @@ class SamplingStep:
     resulting_log_likelihood: float
     proposal_tokens: int
     answer_guard_rejected: bool = False
+    incomplete_rejected: bool = False
 
 
 @dataclass(frozen=True)
@@ -167,15 +168,21 @@ class FixedPowerSampler:
             metrics.proposal_tokens += proposal.token_count
             previous_score = current_score
             uniform_draw = self.random.random()
+            incomplete_rejected = not proposal.ended_naturally
             guard_rejected = (
-                extract_boxed_answer(current_text) is not None
+                not incomplete_rejected
+                and extract_boxed_answer(current_text) is not None
                 and extract_boxed_answer(proposal.text) is None
             )
-            accepted = not guard_rejected and accepts_metropolis(
-                current_score,
-                proposal_score,
-                uniform_draw,
-                self.config.alpha,
+            accepted = (
+                not incomplete_rejected
+                and not guard_rejected
+                and accepts_metropolis(
+                    current_score,
+                    proposal_score,
+                    uniform_draw,
+                    self.config.alpha,
+                )
             )
             if accepted:
                 current_text = proposal.text
@@ -183,7 +190,9 @@ class FixedPowerSampler:
                 metrics.accepted += 1
             else:
                 metrics.rejected_tokens += proposal.token_count
-                if guard_rejected:
+                if incomplete_rejected:
+                    metrics.incomplete_rejections += 1
+                elif guard_rejected:
                     metrics.answer_guard_rejections += 1
             trace.append(
                 SamplingStep(
@@ -196,6 +205,7 @@ class FixedPowerSampler:
                     resulting_log_likelihood=current_score,
                     proposal_tokens=proposal.token_count,
                     answer_guard_rejected=guard_rejected,
+                    incomplete_rejected=incomplete_rejected,
                 )
             )
             if self.should_stop(trace):

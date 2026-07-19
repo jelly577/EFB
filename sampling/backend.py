@@ -10,6 +10,10 @@ from typing import Protocol
 class GeneratedText:
     text: str
     token_count: int
+    # False when generation hit the token budget without emitting EOS, in
+    # which case the text's probability mass is incomplete and it must not
+    # compete on likelihood with completed sequences.
+    ended_naturally: bool = True
 
 
 class SamplingBackend(Protocol):
@@ -18,6 +22,9 @@ class SamplingBackend(Protocol):
 
     def generate_initial(self, prompt: str, max_new_tokens: int) -> GeneratedText:
         """Generate an initial continuation conditioned on *prompt*."""
+
+    def build_chat_prompt(self, system: str, user: str) -> str:
+        """Format a system+user conversation into this model's prompt string."""
 
     def token_count(self, text: str) -> int:
         """Return the backend tokenizer's token count for *text*."""

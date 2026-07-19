@@ -17,9 +17,9 @@ from sampling import (
 from sampling.hf_backend import HuggingFaceBackend
 
 
-PROMPT_TEMPLATE = (
-    "Solve the following math problem. Think step by step and put the final answer "
-    "in \\boxed{{}}.\n\nProblem: {problem}"
+# Official Qwen2.5-Math CoT system prompt, applied through the chat template.
+SYSTEM_PROMPT = (
+    "Please reason step by step, and put your final answer within \\boxed{}."
 )
 
 
@@ -85,7 +85,7 @@ def main() -> None:
             problem_seed = args.seed + index
             backend.reseed(problem_seed)
             sampler.reseed(problem_seed)
-            prompt = PROMPT_TEMPLATE.format(problem=item["problem"])
+            prompt = backend.build_chat_prompt(SYSTEM_PROMPT, item["problem"])
             result = sampler.run(prompt)
             initial_answer = extract_boxed_answer(result.initial_text)
             final_answer = extract_boxed_answer(result.final_text)
@@ -97,6 +97,7 @@ def main() -> None:
                 "initial_is_correct": is_correct(initial_answer, item["answer"]),
                 "initial_truncated": result.metrics.initial_tokens
                 >= args.initial_max_new_tokens,
+                "prompt_style": "qwen-cot-chat",
                 "final_answer": final_answer,
                 "is_correct": is_correct(final_answer, item["answer"]),
                 "runtime_seconds": round(time.perf_counter() - started, 3),

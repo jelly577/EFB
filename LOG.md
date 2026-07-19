@@ -160,6 +160,14 @@
 - 两方法重采样都没能修复第 5 题：伪造 output 的延续在上下文中是高似然的，α=4 只会偏好它；错误的源头（读图后的推断方式）需要更靠前的切分点才可能改写。
 - 待办新增：判分兜底或答案补写以消除格式假阴性；候选完整性护栏；考虑 Qwen2.5-Math 官方 CoT prompt 抑制伪代码执行行为。
 
+## 2026-07-18：完整性护栏与官方 CoT prompt
+
+- **完整性护栏**：`GeneratedText` 新增 `ended_naturally` 字段；候选后缀顶满 token 预算且末 token 不是停止符时判定为截断，直接拒绝（其概率质量不完整，不得与完整序列比较似然）。计入 `incomplete_rejections`，trace 增加 `incomplete_rejected` 字段。修复 q4 复跑中 fixed 版接受"停在公式中间"候选的问题。
+- **官方 CoT prompt**：`run_math500` 弃用自拟指令模板，改用 Qwen2.5-Math 官方 system prompt（"Please reason step by step, and put your final answer within \boxed{}."）经 `apply_chat_template` 构建 ChatML 格式输入；结果记录新增 `prompt_style: qwen-cot-chat`。
+- **停止符处理**：base 模型 `eos_token` 是 `<|endoftext|>`(151643)，而 ChatML 对话以 `<|im_end|>`(151645) 结束；后端把两者都加入 `generate` 的 `eos_token_id`，避免模板化后生成无法停止。已在服务器上用缓存 tokenizer 验证模板存在且格式正确。
+- 验证：离线测试 18 项全部通过（新增完整性护栏测试）。
+- 影响：prompt 变更使旧结果不可直接对比，5 题需要重跑作为新基线。
+
 ## 当前未完成事项
 
 - [x] 分析初始正确但重采样后错误的样例（q1，等长截断丢失 `\boxed{}`，已修复）。
@@ -168,8 +176,10 @@
 - [x] GPU 重跑 5 题 paired（α=4）：q1 不再翻转、无 `\boxed{}` 丢失、准确率回到 60%。
 - [x] 固化服务器软件版本（`results/env_versions.txt`、`results/env_nvidia_smi.txt`）。
 - [x] 人工复核 q4/q5：q4 为判分假阴性（数学正确、缺 `\boxed{}`），q5 为模型真实错误（伪造代码输出）。
-- [ ] 消除格式假阴性：prompt 强化或答案补写步骤，使无 `\boxed{}` 的正确解答可被判分。
-- [ ] 候选完整性护栏：顶满预算且无自然 EOS 的候选应拒绝（其概率质量不完整）。
+- [x] 官方 CoT prompt：已切换到 Qwen2.5-Math chat template（待 5 题复跑确认格式假阴性消除）。
+- [x] 候选完整性护栏：顶满预算且无自然 EOS 的候选直接拒绝。
+- [ ] 答案补写兜底（可开关）：无 `\boxed{}` 时贪心补写答案句，触发次数计入报告。
+- [ ] 新 prompt 下重跑 5 题 paired，建立新基线并确认 q4 格式假阴性消除。
 - [ ] 与论文原文逐项核对 proposal distribution 与接受概率（玩具验证已通过，等论文原文最终确认）。
 - [ ] 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`。
 - [ ] 将难点优先选位安全接入真实模型主实验（需把选位概率纳入 proposal ratio）。

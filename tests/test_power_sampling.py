@@ -86,6 +86,26 @@ class RejectingBackend(FakeBackend):
         return GeneratedText(f"bad-{self.counter}", 3)
 
 
+class TruncatingBackend(FakeBackend):
+    """Every proposal is better-scored but hit the budget without EOS."""
+
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def score(self, prompt: str, continuation: str) -> float:
+        return -10.0 if continuation == "initial" else -1.0
+
+    def resample_suffix(
+        self,
+        prompt: str,
+        continuation: str,
+        split_token_index: int,
+        max_new_tokens: int,
+    ) -> GeneratedText:
+        self.counter += 1
+        return GeneratedText(f"cut-{self.counter}", 3, ended_naturally=False)
+
+
 class BoxedBackend(FakeBackend):
     def __init__(self) -> None:
         pass
@@ -121,6 +141,18 @@ class PowerSamplingTests(unittest.TestCase):
             accepts_metropolis(-5.0, -1.0, 0.5, alpha=0.5)
         with self.assertRaises(ValueError):
             PowerSamplingConfig(alpha=0.5)
+
+    def test_completeness_guard_rejects_budget_truncated_proposals(self) -> None:
+        sampler = FixedPowerSampler(
+            TruncatingBackend(),
+            PowerSamplingConfig(steps=3, seed=7),
+        )
+        result = sampler.run("prompt")
+
+        self.assertEqual(result.final_text, "initial")
+        self.assertEqual(result.metrics.accepted, 0)
+        self.assertEqual(result.metrics.incomplete_rejections, 3)
+        self.assertTrue(all(step.incomplete_rejected for step in result.trace))
 
     def test_answer_guard_rejects_proposals_losing_boxed_answer(self) -> None:
         sampler = FixedPowerSampler(

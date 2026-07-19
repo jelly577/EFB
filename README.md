@@ -95,8 +95,8 @@ output/pdf/EFB_B同学_α4修复版复跑报告.pdf
 
 ## 已实现模块
 
-- `sampling/hf_backend.py`：计算条件 log-likelihood，并从指定 token 位置重采样后缀（自然 EOS 终止）。
-- `sampling/power.py`：p^α 目标的 `(α−1)Δ` Metropolis-Hastings 接受规则、`\boxed{}` 答案护栏、固定轮次基线和自适应提前停止（接受步增益 + 连续拒绝双判据）。
+- `sampling/hf_backend.py`：计算条件 log-likelihood、构建 ChatML prompt，并从指定 token 位置重采样后缀（自然 EOS 终止，兼容 `<|im_end|>`/`<|endoftext|>` 双停止符）。
+- `sampling/power.py`：p^α 目标的 `(α−1)Δ` Metropolis-Hastings 接受规则、`\boxed{}` 答案护栏、截断候选完整性护栏、固定轮次基线和自适应提前停止（接受步增益 + 连续拒绝双判据）。
 - `sampling/criticality.py`：用 token surprise 找出模型最不确定的位置。
 - `sampling/toy_validation.py`：三状态玩具分布验证 proposal ratio 修正；变长序列玩具模型验证 `(α−1)Δ` 收敛到 p^α。
 - `sampling/metrics.py`：记录生成、拒绝、接受、提前停止和节省尝试等开销。
@@ -190,7 +190,7 @@ python -m evaluation.plot_results \
   --output figures/five_paired_comparison.png
 ```
 
-每道题使用 `seed + 题号` 重新设置模型生成和选位随机数，因此 fixed 与 adaptive 会共享同一道题的初始生成，并在停止前使用一致的提议序列。切分点只在最后 `suffix_max_new_tokens` 个位置内选择；重采样后缀允许自然 EOS 终止（不再强制等长），长度偏置由接受规则中的 proposal 修正从原理上处理：目标分布 p^α、proposal 为模型自身时，接受概率化简为 `min(1, exp((α−1)·(log p′ − log p)))`。若 proposal 丢失当前文本已有的 `\boxed{}` 答案，会被护栏直接拒绝。
+每道题使用 `seed + 题号` 重新设置模型生成和选位随机数，因此 fixed 与 adaptive 会共享同一道题的初始生成，并在停止前使用一致的提议序列。Prompt 采用 Qwen2.5-Math 官方 CoT system prompt 经 chat template 构建（结果记录 `prompt_style: qwen-cot-chat`）。切分点只在最后 `suffix_max_new_tokens` 个位置内选择；重采样后缀允许自然 EOS 终止（不再强制等长），长度偏置由接受规则中的 proposal 修正从原理上处理：目标分布 p^α、proposal 为模型自身时，接受概率化简为 `min(1, exp((α−1)·(log p′ − log p)))`。两道护栏会直接拒绝不合格候选：丢失当前已有 `\boxed{}` 答案的候选（答案护栏），以及顶满预算而无自然终止的候选（完整性护栏，其概率质量不完整）。
 
 ## 下一步
 

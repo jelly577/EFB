@@ -14,6 +14,7 @@ class SamplingMetrics:
     attempts: int = 0
     accepted: int = 0
     answer_guard_rejections: int = 0
+    incomplete_rejections: int = 0
     stopped_early: bool = False
 
     @property
