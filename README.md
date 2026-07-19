@@ -65,6 +65,8 @@ GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary gene
 - 自适应平均执行 3.8/8 次，停止原因符合设计（低增益或连续 4 次拒绝），不再是"2 次拒绝即停"。
 - 5 题样本仍只是冒烟信号：α=4 未损害也未提升准确率，是否有增益需 100 题验证。
 
+详细报告：[`output/pdf/EFB_B同学_α4修复版复跑报告.pdf`](output/pdf/EFB_B同学_α4修复版复跑报告.pdf)
+
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
 ## 实验产物
@@ -81,8 +83,10 @@ results/alpha4_summary.json          α=4 复跑汇总指标
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
+figures/alpha4_comparison.png        α=4 修复版复跑对比图
 figures/smoke_comparison.png         早期冒烟对比图
 output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf
+output/pdf/EFB_B同学_α4修复版复跑报告.pdf
 ```
 
 `results/*`、`figures/*` 和 `tmp/` 默认不提交 Git；PDF 当前位于 `output/pdf/`，但尚未提交。若要公开实验结果，需要显式调整 `.gitignore` 或使用 `git add -f`，并先确认文件体积和内容。

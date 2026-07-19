@@ -127,7 +127,8 @@
 - 同一 AutoDL RTX 4090 24GB 容器；远程执行由本机通过 SSH 驱动，nohup 后台运行。
 - Python 3.12.3、PyTorch 2.5.1+cu124、Transformers 5.14.1、Datasets 5.0.0；`nvidia-smi` 与包版本已存入 `results/env_nvidia_smi.txt`、`results/env_versions.txt`（此前待办已完成）。
 - 参数：`alpha=4.0`、`steps=8`、初始上限 2048、后缀窗口 128、seed 42 逐题配对；自适应 `min_steps=2`、`patience=2`、`rejection_patience=4`、`gain_threshold=0.01`。
-- 代码版本：`465115d`。产物：`results/fixed_5_alpha4.jsonl`、`results/adaptive_5_alpha4.jsonl`、`results/alpha4_summary.json`。
+- 代码版本：`465115d`。产物：`results/fixed_5_alpha4.jsonl`、`results/adaptive_5_alpha4.jsonl`、`results/alpha4_summary.json`、`figures/alpha4_comparison.png`。
+- 报告：`output/pdf/EFB_B同学_α4修复版复跑报告.pdf`（3 页中文，生成脚本 `tmp/pdfs/build_alpha4_report.py`，逐页渲染检查通过）。
 
 ### 汇总结果
 
