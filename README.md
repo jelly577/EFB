@@ -1,0 +1,71 @@
+# 推理效率研究 - B 同学工作区
+
+本仓库按《推理效率研究·零基础实操版》初始化，聚焦 B 同学负责的 **Power Sampling 算力分配**：先跑通固定轮次版本，再研究自适应停止与难点优先重采样。
+
+## 当前已完成
+
+- `sampling/hf_backend.py`：计算条件 log-likelihood、从指定 token 位置重采样后缀。
+- `sampling/power.py`：固定轮次 Metropolis 接受/拒绝流程。
+- `sampling/metrics.py`：记录总生成 token、被拒绝 token、接受率等开销。
+- `generation/run_math500.py`：从 MATH-500 取少量题目运行并写入 JSONL。
+- `evaluation/answers.py`：提取 `\boxed{}` 答案并做基础格式归一化。
+- `tests/`：无需 GPU、无需下载模型的离线单元测试。
+
+## 目录约定
+
+```text
+generation/   共用生成流水线
+evaluation/   共用判分工具
+sampling/     B 同学的 Power Sampling 代码
+results/      实验结果，不提交 Git
+figures/      生成的图，不提交 Git
+tests/        离线测试
+```
+
+## 环境
+
+建议在带 NVIDIA GPU 的 Linux 服务器上使用 Python 3.10：
+
+```bash
+conda create -n reason python=3.10 -y
+conda activate reason
+pip install -e '.[dev]'
+```
+
+若服务器需要 Hugging Face 镜像，可复制 `.env.example` 中的变量到 shell 环境。密钥只放环境变量，禁止写进源码。
+
+## 先做离线验证
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## 跑 5 道 MATH-500 冒烟实验
+
+```bash
+python -m generation.run_math500 \
+  --model Qwen/Qwen2.5-Math-7B \
+  --limit 5 \
+  --steps 8 \
+  --output results/fixed_power_sampling.jsonl
+```
+
+首次运行会下载模型和数据集。程序默认使用固定 8 次重采样，并为每道题保存：
+
+- 初始/最终文本与 log-likelihood
+- 重采样次数、接受次数和接受率
+- 初始 token、候选 token、总生成 token
+- 被拒绝候选的 token 数与浪费比例
+- 最终答案、基础判分结果和运行时间
+
+确认 5 道题流程无误后再把 `--limit` 改成 `100`。不要一开始直接跑 500 道。
+
+## 后续里程碑
+
+1. 固定 8 次基线：先确认开销统计可信。
+2. 自适应停止：连续若干次 likelihood 提升很小时停止当前位置。
+3. 难点优先：用低 logprob / 高 entropy 选择重采样位置。
+4. 数学验证：改变位置选择分布前，先在玩具分布上验证接受率公式。
+5. 完整实验：对比普通生成、固定版、自适应版、难点版和完整版。
+
+> 当前接受规则只是手册中的 likelihood-ratio 入门基线，不等同于对论文公式的完整复现。正式实验前必须与原论文逐项核对；改变选点或提议分布时，还要把 proposal ratio 纳入 Metropolis-Hastings 接受概率。

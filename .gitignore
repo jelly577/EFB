@@ -1,0 +1,22 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model and dataset caches
+.cache/
+checkpoints/
+
+# Experiment artifacts
+results/*
+!results/.gitkeep
+figures/*
+!figures/.gitkeep
+
+# Local scratch files
+tmp/
+.DS_Store
+

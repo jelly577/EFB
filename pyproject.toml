@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "efficient-reasoning-sampling"
+version = "0.1.0"
+description = "Power Sampling experiments for efficient reasoning"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "accelerate>=0.30",
+  "datasets>=2.19",
+  "torch>=2.2",
+  "transformers>=4.44",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+packages = ["evaluation", "generation", "sampling"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
