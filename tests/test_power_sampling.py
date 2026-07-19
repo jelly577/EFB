@@ -2,6 +2,8 @@ import unittest
 
 from sampling.backend import GeneratedText
 from sampling.power import (
+    AdaptivePowerSampler,
+    AdaptivePowerSamplingConfig,
     FixedPowerSampler,
     PowerSamplingConfig,
     accepts_metropolis,
@@ -26,6 +28,13 @@ class FakeBackend:
     def score(self, prompt: str, continuation: str) -> float:
         return {"initial": -10.0, "better": -5.0, "worse": -100.0}[continuation]
 
+    def token_log_probabilities(
+        self,
+        prompt: str,
+        continuation: str,
+    ) -> list[float]:
+        return [self.score(prompt, continuation) / 2] * 2
+
     def resample_suffix(
         self,
         prompt: str,
@@ -34,6 +43,24 @@ class FakeBackend:
         max_new_tokens: int,
     ) -> GeneratedText:
         return next(self.proposals)
+
+
+class FlatBackend(FakeBackend):
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def score(self, prompt: str, continuation: str) -> float:
+        return -10.0
+
+    def resample_suffix(
+        self,
+        prompt: str,
+        continuation: str,
+        split_token_index: int,
+        max_new_tokens: int,
+    ) -> GeneratedText:
+        self.counter += 1
+        return GeneratedText(f"flat-{self.counter}", 3)
 
 
 class PowerSamplingTests(unittest.TestCase):
@@ -54,6 +81,24 @@ class PowerSamplingTests(unittest.TestCase):
         self.assertEqual(result.metrics.rejected_tokens, 4)
         self.assertEqual(result.metrics.total_generated_tokens, 9)
         self.assertEqual(result.metrics.acceptance_rate, 0.5)
+        self.assertEqual(len(result.trace), 2)
+
+    def test_adaptive_sampler_stops_after_repeated_flat_gains(self) -> None:
+        sampler = AdaptivePowerSampler(
+            FlatBackend(),
+            AdaptivePowerSamplingConfig(
+                steps=8,
+                min_steps=2,
+                patience=2,
+                gain_threshold=0.01,
+                seed=7,
+            ),
+        )
+        result = sampler.run("prompt")
+
+        self.assertEqual(result.metrics.attempts, 2)
+        self.assertTrue(result.metrics.stopped_early)
+        self.assertEqual(result.metrics.saved_attempts, 6)
 
 
 if __name__ == "__main__":

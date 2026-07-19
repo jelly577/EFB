@@ -66,10 +66,18 @@ class HuggingFaceBackend:
         return GeneratedText(text=text, token_count=int(continuation_ids.shape[0]))
 
     def score(self, prompt: str, continuation: str) -> float:
+        token_scores = self.token_log_probabilities(prompt, continuation)
+        return sum(token_scores) if token_scores else float("-inf")
+
+    def token_log_probabilities(
+        self,
+        prompt: str,
+        continuation: str,
+    ) -> list[float]:
         prompt_ids = self._prompt_ids(prompt)
         continuation_ids = self._continuation_ids(continuation)
         if continuation_ids.shape[1] == 0:
-            return float("-inf")
+            return []
 
         input_ids = self.torch.cat((prompt_ids, continuation_ids), dim=1)
         with self.torch.inference_mode():
@@ -81,7 +89,14 @@ class HuggingFaceBackend:
             targets.unsqueeze(-1),
         ).squeeze(-1)
         continuation_start = prompt_ids.shape[1] - 1
-        return float(token_log_probabilities[:, continuation_start:].sum().item())
+        continuation_log_probabilities = token_log_probabilities[
+            0,
+            continuation_start:,
+        ]
+        return [
+            float(value)
+            for value in continuation_log_probabilities.detach().cpu().tolist()
+        ]
 
     def resample_suffix(
         self,
@@ -108,4 +123,3 @@ class HuggingFaceBackend:
         proposed_ids = self.torch.cat((kept_prefix, new_suffix), dim=1)[0]
         text = self.tokenizer.decode(proposed_ids, skip_special_tokens=True)
         return GeneratedText(text=text, token_count=int(new_suffix.shape[1]))
-

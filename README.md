@@ -5,7 +5,9 @@
 ## 当前已完成
 
 - `sampling/hf_backend.py`：计算条件 log-likelihood、从指定 token 位置重采样后缀。
-- `sampling/power.py`：固定轮次 Metropolis 接受/拒绝流程。
+- `sampling/power.py`：固定轮次基线和按 likelihood 连续低增益提前结束的自适应版。
+- `sampling/criticality.py`：用 token surprise 找出模型最不确定的位置。
+- `sampling/toy_validation.py`：在三状态玩具分布验证 proposal ratio 修正。
 - `sampling/metrics.py`：记录总生成 token、被拒绝 token、接受率等开销。
 - `generation/run_math500.py`：从 MATH-500 取少量题目运行并写入 JSONL。
 - `evaluation/answers.py`：提取 `\boxed{}` 答案并做基础格式归一化。
@@ -29,7 +31,7 @@ tests/        离线测试
 ```bash
 conda create -n reason python=3.10 -y
 conda activate reason
-pip install -e '.[dev]'
+pip install -e '.[dev,analysis]'
 ```
 
 若服务器需要 Hugging Face 镜像，可复制 `.env.example` 中的变量到 shell 环境。密钥只放环境变量，禁止写进源码。
@@ -45,6 +47,7 @@ python -m unittest discover -s tests -v
 ```bash
 python -m generation.run_math500 \
   --model Qwen/Qwen2.5-Math-7B \
+  --mode fixed \
   --limit 5 \
   --steps 8 \
   --output results/fixed_power_sampling.jsonl
@@ -60,12 +63,51 @@ python -m generation.run_math500 \
 
 确认 5 道题流程无误后再把 `--limit` 改成 `100`。不要一开始直接跑 500 道。
 
+## 跑自适应停止版
+
+```bash
+python -m generation.run_math500 \
+  --model Qwen/Qwen2.5-Math-7B \
+  --mode adaptive \
+  --limit 5 \
+  --steps 8 \
+  --min-steps 2 \
+  --patience 2 \
+  --gain-threshold 0.01
+```
+
+`steps` 是最大预算；连续 `patience` 次当前链的 likelihood 变化不超过阈值时会提前结束。结果中的 `saved_attempts` 表示相对固定预算少做了多少次重采样，`trace` 保存每一步的选位、提议分数和接受结果。
+
+## 验证非均匀提议公式
+
+```bash
+python -m sampling.toy_validation
+```
+
+输出会同时展示加入和遗漏 proposal ratio 时的经验分布。只有修正后的链应接近理论目标分布。真实模型的“难点优先重写”暂未接入主实验，必须先根据论文/导师确认完整接受概率，避免得到数学上错误的结果。
+
+## 汇总与画图
+
+固定版和自适应版各跑出一个 JSONL 后：
+
+```bash
+python -m evaluation.summarize_results \
+  results/fixed_power_sampling.jsonl \
+  results/adaptive_power_sampling.jsonl
+
+python -m evaluation.plot_results \
+  results/fixed_power_sampling.jsonl \
+  results/adaptive_power_sampling.jsonl
+```
+
+第二条命令生成 `figures/power_sampling_report.png`：左图是 token-正确率对比，右图是归一化重写位置分布。
+
 ## 后续里程碑
 
 1. 固定 8 次基线：先确认开销统计可信。
-2. 自适应停止：连续若干次 likelihood 提升很小时停止当前位置。
-3. 难点优先：用低 logprob / 高 entropy 选择重采样位置。
-4. 数学验证：改变位置选择分布前，先在玩具分布上验证接受率公式。
+2. 自适应停止：已实现，下一步在 5 道题上调阈值。
+3. 难点优先：评分和排序已实现，确认接受公式后再接入真实模型。
+4. 数学验证：三状态玩具验证已实现，需要保留为回归测试。
 5. 完整实验：对比普通生成、固定版、自适应版、难点版和完整版。
 
 > 当前接受规则只是手册中的 likelihood-ratio 入门基线，不等同于对论文公式的完整复现。正式实验前必须与原论文逐项核对；改变选点或提议分布时，还要把 proposal ratio 纳入 Metropolis-Hastings 接受概率。

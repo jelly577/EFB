@@ -22,6 +22,13 @@ class SamplingBackend(Protocol):
     def score(self, prompt: str, continuation: str) -> float:
         """Return log p(continuation | prompt)."""
 
+    def token_log_probabilities(
+        self,
+        prompt: str,
+        continuation: str,
+    ) -> list[float]:
+        """Return one conditional log-probability per continuation token."""
+
     def resample_suffix(
         self,
         prompt: str,
@@ -30,4 +37,3 @@ class SamplingBackend(Protocol):
         max_new_tokens: int,
     ) -> GeneratedText:
         """Keep a continuation prefix and sample a replacement suffix."""
-

@@ -17,10 +17,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+analysis = ["matplotlib>=3.8"]
 
 [tool.setuptools]
 packages = ["evaluation", "generation", "sampling"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
