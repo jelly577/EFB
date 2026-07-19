@@ -19,7 +19,8 @@
 | 完整性护栏 + 官方 CoT prompt | ✅ 完成 | 未自然终止的候选直接拒绝；prompt 走 chat template |
 | 5 题新 prompt 复跑（v2） | ✅ 完成 | 暴露 base 模型"答完不停"失效模式，真实正确率 80%，判分 40% |
 | Instruct 模型基线（v3） | ✅ 完成 | 换 `Qwen2.5-Math-7B-Instruct`：判分可信、5/5 全对、q5 伪造输出消失 |
-| 难度分层抽题 | ✅ 代码就绪 | `--levels 4,5` 按难度过滤，记录 `dataset_index`/`level`；20 题实验待服务器开机 |
+| 难度分层抽题 | ✅ 完成 | `--levels 4,5` 按难度过滤，记录 `dataset_index`/`level` |
+| 20 题难题 paired（v4） | ✅ 完成 | 初始 50% 达标；零翻转（无改坏无救回）；自适应省 21.3% token / 21.2% 时间 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
@@ -110,6 +111,23 @@ v3 基线结论：
 
 详细报告：[`output/pdf/EFB_B同学_Instruct基线报告.pdf`](output/pdf/EFB_B同学_Instruct基线报告.pdf)
 
+## 20 题难题 paired 实验（v4，2026-07-19）
+
+MATH-500 level 4–5 前 20 题（`--levels 4,5`），Instruct 模型，其余配置与 v3 一致。
+
+| 方法 | 准确率 | 平均总 token | 平均被拒 token | 接受率 | 平均耗时/题 | 提前停止率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 普通初始生成 | 50% | 823.3 | — | — | — | — |
+| 固定 8 次 | 50% | 1410.2 | 372.8 | 51.3% | 34.95 秒 | 0% |
+| 自适应停止 | 50% | 1110.5 | 191.9 | 55.9% | 27.54 秒 | 90% |
+
+v4 主要结论：
+
+- **题集区分度达标**：初始 50%（10/20）落在 40–70% 目标区间，适合做增益实验。
+- **零翻转**：无"对→错"（安全性继续成立），也无"错→对"（尚无增益正例）。判断：错误多发生在推理前中段，当前只在末尾 128 token 窗口内重采样，抛光尾部够不到上游错误——扩大窗口是下一个实验变量。
+- **自适应在难题上收益更大**：90% 提前停止，省 21.3% token、21.2% 时间（v3 为 14.6%/13.1%）。
+- 2/20 题初始生成退化成乱码顶满 2048（无 `\boxed{}`），完整性护栏正确全拦，但这两题成为死重——待处理（重复惩罚或复跑）。
+
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
 ## 实验产物
@@ -130,6 +148,9 @@ results/v2_summary.json              v2 复跑汇总指标
 results/fixed_5_instruct.jsonl       5 题固定版 Instruct 基线（v3）
 results/adaptive_5_instruct.jsonl    5 题自适应版 Instruct 基线（v3）
 results/instruct_summary.json        v3 基线汇总指标
+results/fixed_20_hard.jsonl          20 题难题固定版（v4，level 4-5）
+results/adaptive_20_hard.jsonl       20 题难题自适应版（v4，level 4-5）
+results/hard20_summary.json          v4 难题实验汇总指标
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
