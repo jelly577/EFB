@@ -6,6 +6,8 @@ import math
 import random
 from dataclasses import asdict, dataclass
 
+from evaluation.answers import extract_boxed_answer
+
 from .backend import SamplingBackend
 from .metrics import SamplingMetrics
 
@@ -13,8 +15,9 @@ from .metrics import SamplingMetrics
 @dataclass(frozen=True)
 class PowerSamplingConfig:
     steps: int = 8
-    initial_max_new_tokens: int = 1024
+    initial_max_new_tokens: int = 2048
     suffix_max_new_tokens: int = 128
+    alpha: float = 4.0
     seed: int = 42
 
     def __post_init__(self) -> None:
@@ -22,6 +25,8 @@ class PowerSamplingConfig:
             raise ValueError("steps must be non-negative")
         if self.initial_max_new_tokens < 1 or self.suffix_max_new_tokens < 1:
             raise ValueError("token limits must be positive")
+        if self.alpha < 1.0:
+            raise ValueError("alpha must be at least 1")
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class AdaptivePowerSamplingConfig(PowerSamplingConfig):
     min_steps: int = 2
     gain_threshold: float = 0.01
     patience: int = 2
+    rejection_patience: int = 4
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -38,6 +44,8 @@ class AdaptivePowerSamplingConfig(PowerSamplingConfig):
             raise ValueError("gain_threshold must be non-negative")
         if self.patience < 1:
             raise ValueError("patience must be positive")
+        if self.rejection_patience < 1:
+            raise ValueError("rejection_patience must be positive")
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,7 @@ class SamplingStep:
     accepted: bool
     resulting_log_likelihood: float
     proposal_tokens: int
+    answer_guard_rejected: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,11 +87,23 @@ def accepts_metropolis(
     current_log_likelihood: float,
     proposal_log_likelihood: float,
     uniform_draw: float,
+    alpha: float = 4.0,
 ) -> bool:
-    """Apply the handbook's introductory likelihood-ratio baseline rule."""
+    """Metropolis-Hastings acceptance for the power target p^alpha.
+
+    The proposal resamples a suffix from the model itself, so the proposal
+    ratio cancels one factor of the likelihood ratio and the acceptance
+    reduces to (alpha - 1) * (log p' - log p). With alpha = 1 the chain
+    accepts everything, which is correct: it then samples from p directly.
+    """
     if not 0.0 <= uniform_draw < 1.0:
         raise ValueError("uniform_draw must be in [0, 1)")
-    log_acceptance = min(0.0, proposal_log_likelihood - current_log_likelihood)
+    if alpha < 1.0:
+        raise ValueError("alpha must be at least 1")
+    log_acceptance = min(
+        0.0,
+        (alpha - 1.0) * (proposal_log_likelihood - current_log_likelihood),
+    )
     return uniform_draw == 0.0 or math.log(uniform_draw) < log_acceptance
 
 
@@ -99,7 +120,7 @@ class FixedPowerSampler:
     def reseed(self, seed: int) -> None:
         self.random.seed(seed)
 
-    def should_stop(self, score_history: list[float]) -> bool:
+    def should_stop(self, trace: list[SamplingStep]) -> bool:
         return False
 
     def run(self, prompt: str, initial_text: str | None = None) -> SamplingResult:
@@ -123,7 +144,6 @@ class FixedPowerSampler:
             initial_tokens=initial_tokens,
             planned_attempts=self.config.steps,
         )
-        score_history = [current_score]
         trace: list[SamplingStep] = []
 
         for step_index in range(self.config.steps):
@@ -146,10 +166,16 @@ class FixedPowerSampler:
             metrics.attempts += 1
             metrics.proposal_tokens += proposal.token_count
             previous_score = current_score
-            accepted = accepts_metropolis(
+            uniform_draw = self.random.random()
+            guard_rejected = (
+                extract_boxed_answer(current_text) is not None
+                and extract_boxed_answer(proposal.text) is None
+            )
+            accepted = not guard_rejected and accepts_metropolis(
                 current_score,
                 proposal_score,
-                self.random.random(),
+                uniform_draw,
+                self.config.alpha,
             )
             if accepted:
                 current_text = proposal.text
@@ -157,7 +183,8 @@ class FixedPowerSampler:
                 metrics.accepted += 1
             else:
                 metrics.rejected_tokens += proposal.token_count
-            score_history.append(current_score)
+                if guard_rejected:
+                    metrics.answer_guard_rejections += 1
             trace.append(
                 SamplingStep(
                     step=step_index + 1,
@@ -168,9 +195,10 @@ class FixedPowerSampler:
                     accepted=accepted,
                     resulting_log_likelihood=current_score,
                     proposal_tokens=proposal.token_count,
+                    answer_guard_rejected=guard_rejected,
                 )
             )
-            if self.should_stop(score_history):
+            if self.should_stop(trace):
                 metrics.stopped_early = metrics.attempts < self.config.steps
                 break
 
@@ -194,18 +222,33 @@ class AdaptivePowerSampler(FixedPowerSampler):
         super().__init__(backend, config or AdaptivePowerSamplingConfig())
         self.config: AdaptivePowerSamplingConfig
 
-    def should_stop(self, score_history: list[float]) -> bool:
-        attempts = len(score_history) - 1
-        if attempts < self.config.min_steps:
+    def should_stop(self, trace: list[SamplingStep]) -> bool:
+        """Stop on converged accepted gains or a long rejection streak.
+
+        Rejected steps leave the score unchanged, so counting them as
+        zero-gain steps would conflate "the chain rejects proposals" with
+        "accepted moves stopped improving". Rejections only trigger a stop
+        through the separate, longer rejection_patience streak.
+        """
+        if len(trace) < self.config.min_steps:
             return False
-        history_start = -self.config.patience - 1
-        recent_gains = [
-            abs(current - previous)
-            for previous, current in zip(
-                score_history[history_start:-1],
-                score_history[history_start + 1 :],
-            )
+
+        consecutive_rejections = 0
+        for step in reversed(trace):
+            if step.accepted:
+                break
+            consecutive_rejections += 1
+        if consecutive_rejections >= self.config.rejection_patience:
+            return True
+
+        accepted_gains = [
+            abs(step.resulting_log_likelihood - step.current_log_likelihood)
+            for step in trace
+            if step.accepted
         ]
-        return len(recent_gains) == self.config.patience and all(
-            gain <= self.config.gain_threshold for gain in recent_gains
+        if len(accepted_gains) < self.config.patience:
+            return False
+        return all(
+            gain <= self.config.gain_threshold
+            for gain in accepted_gains[-self.config.patience :]
         )

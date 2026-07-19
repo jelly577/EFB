@@ -13,6 +13,7 @@ class SamplingMetrics:
     planned_attempts: int = 0
     attempts: int = 0
     accepted: int = 0
+    answer_guard_rejections: int = 0
     stopped_early: bool = False
 
     @property

@@ -29,13 +29,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=("fixed", "adaptive"), default="fixed")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--steps", type=int, default=8)
-    parser.add_argument("--initial-max-new-tokens", type=int, default=1024)
+    parser.add_argument("--initial-max-new-tokens", type=int, default=2048)
     parser.add_argument("--suffix-max-new-tokens", type=int, default=128)
+    parser.add_argument("--alpha", type=float, default=4.0)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--min-steps", type=int, default=2)
     parser.add_argument("--gain-threshold", type=float, default=0.01)
     parser.add_argument("--patience", type=int, default=2)
+    parser.add_argument("--rejection-patience", type=int, default=4)
     parser.add_argument(
         "--output",
         type=Path,
@@ -56,6 +58,7 @@ def main() -> None:
         "steps": args.steps,
         "initial_max_new_tokens": args.initial_max_new_tokens,
         "suffix_max_new_tokens": args.suffix_max_new_tokens,
+        "alpha": args.alpha,
         "seed": args.seed,
     }
     if args.mode == "adaptive":
@@ -64,6 +67,7 @@ def main() -> None:
             min_steps=args.min_steps,
             gain_threshold=args.gain_threshold,
             patience=args.patience,
+            rejection_patience=args.rejection_patience,
         )
         sampler = AdaptivePowerSampler(backend, config)
     else:
@@ -91,6 +95,8 @@ def main() -> None:
                 "ground_truth": item["answer"],
                 "initial_answer": initial_answer,
                 "initial_is_correct": is_correct(initial_answer, item["answer"]),
+                "initial_truncated": result.metrics.initial_tokens
+                >= args.initial_max_new_tokens,
                 "final_answer": final_answer,
                 "is_correct": is_correct(final_answer, item["answer"]),
                 "runtime_seconds": round(time.perf_counter() - started, 3),

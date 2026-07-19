@@ -13,8 +13,10 @@
 | 自适应停止 | ✅ 完成 | 连续低增益时提前停止，保留逐步 trace |
 | 难点位置评分 | ✅ 完成基础模块 | 已按 token surprise 排序，尚未接入真实模型主实验 |
 | 非均匀提议数学验证 | ✅ 完成玩具验证 | proposal ratio 修正已通过三状态分布测试 |
+| Power (p^α) 接受规则 | ✅ 完成 | `(α−1)Δ` 规则 + 答案护栏，变长玩具分布上收敛到 p^α |
+| 准确率下降根因修复 | ✅ 完成（待 GPU 复跑验证） | q1 翻转由等长后缀截断引起，已撤销等长约束 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
-| 离线单元测试 | ✅ 11/11 通过 | 2026-07-18 本地重新验证 |
+| 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
 | 5 题 GPU 冒烟实验 | ✅ 完成 | RTX 4090 24GB，fixed 与 adaptive 各 5 题 |
 | 100 题实验 | ⏳ 未运行 | 应先解决正确率下降和判分可靠性问题 |
@@ -41,7 +43,9 @@ GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary gene
 - 平均被拒 token 从 289.2 降至 91.6，减少约 **68.3%**。
 - 5/5 道题均触发提前停止，且 paired 初始文本 5/5 一致。
 
-这批结果只证明自适应停止在当前设置下明显减少计算，**不证明方法提升准确率**。样本仅 5 题；普通初始生成准确率为 60%，两种重采样方法均为 40%，其中存在原本答对但重采样后答错的负面样例。扩大实验前应优先检查接受规则、答案保持和数学等价判分。
+这批结果只证明自适应停止在当前设置下明显减少计算，**不证明方法提升准确率**。样本仅 5 题；普通初始生成准确率为 60%，两种重采样方法均为 40%。
+
+**逐题诊断（2026-07-18）已定位准确率下降的根因**：唯一的"初始对→最终错"翻转（q1）来自等长后缀约束——重写在句中被硬截断导致 `\boxed{}` 丢失，属工程 bug 而非方法失效（q3 是初始生成 1024 token 截断，q4 是模型真实错误）。相应修复（撤销等长约束、`(α−1)Δ` 接受规则、答案护栏、停止判据修正）已进入代码，上表冒烟数字仍是修复前的旧结果，待 GPU 复跑后更新。
 
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
@@ -62,10 +66,10 @@ output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf
 
 ## 已实现模块
 
-- `sampling/hf_backend.py`：计算条件 log-likelihood，并从指定 token 位置重采样后缀。
-- `sampling/power.py`：固定轮次基线和按 likelihood 连续低增益提前结束的自适应版本。
+- `sampling/hf_backend.py`：计算条件 log-likelihood，并从指定 token 位置重采样后缀（自然 EOS 终止）。
+- `sampling/power.py`：p^α 目标的 `(α−1)Δ` Metropolis-Hastings 接受规则、`\boxed{}` 答案护栏、固定轮次基线和自适应提前停止（接受步增益 + 连续拒绝双判据）。
 - `sampling/criticality.py`：用 token surprise 找出模型最不确定的位置。
-- `sampling/toy_validation.py`：在三状态玩具分布中验证 proposal ratio 修正。
+- `sampling/toy_validation.py`：三状态玩具分布验证 proposal ratio 修正；变长序列玩具模型验证 `(α−1)Δ` 收敛到 p^α。
 - `sampling/metrics.py`：记录生成、拒绝、接受、提前停止和节省尝试等开销。
 - `generation/run_math500.py`：读取 MATH-500、运行实验并写入 JSONL。
 - `evaluation/answers.py`：提取 `\boxed{}` 答案并做基础格式归一化。
@@ -122,6 +126,7 @@ python -m generation.run_math500 \
   --mode fixed \
   --limit 5 \
   --steps 8 \
+  --alpha 4.0 \
   --seed 42 \
   --output results/fixed_5_paired.jsonl
 ```
@@ -134,8 +139,10 @@ python -m generation.run_math500 \
   --mode adaptive \
   --limit 5 \
   --steps 8 \
+  --alpha 4.0 \
   --min-steps 2 \
   --patience 2 \
+  --rejection-patience 4 \
   --gain-threshold 0.01 \
   --seed 42 \
   --output results/adaptive_5_paired.jsonl
@@ -154,15 +161,15 @@ python -m evaluation.plot_results \
   --output figures/five_paired_comparison.png
 ```
 
-每道题使用 `seed + 题号` 重新设置模型生成和选位随机数，因此 fixed 与 adaptive 会共享同一道题的初始生成，并在停止前使用一致的提议序列。当前基线只在最后 `suffix_max_new_tokens` 个位置内选择切分点，并强制生成与原后缀等长的替代文本，避免短序列仅因累计 log-likelihood 较高而被偏好。
+每道题使用 `seed + 题号` 重新设置模型生成和选位随机数，因此 fixed 与 adaptive 会共享同一道题的初始生成，并在停止前使用一致的提议序列。切分点只在最后 `suffix_max_new_tokens` 个位置内选择；重采样后缀允许自然 EOS 终止（不再强制等长），长度偏置由接受规则中的 proposal 修正从原理上处理：目标分布 p^α、proposal 为模型自身时，接受概率化简为 `min(1, exp((α−1)·(log p′ − log p)))`。若 proposal 丢失当前文本已有的 `\boxed{}` 答案，会被护栏直接拒绝。
 
 ## 下一步
 
-1. 人工复核 5 题的预测与标准答案，确认基础判分没有把数学等价答案判错。
-2. 定位“初始正确、重采样后错误”的样例，检查接受规则与答案保持约束。
-3. 在 5 题上调节 `gain_threshold`、`patience` 和最小执行步数，观察准确率与计算量。
+1. GPU 重跑 5 题 paired（α=4），确认 q1 不再翻转、无 `\boxed{}` 丢失、自适应提前停止率合理。
+2. 人工复核 5 题的预测与标准答案，确认基础判分没有把数学等价答案判错。
+3. 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`，观察准确率与计算量。
 4. 通过上述检查后运行 100 题 paired 实验，并报告均值、方差或置信区间。
-5. 与论文逐项核对 proposal distribution 和接受概率，再接入难点优先选位。
+5. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
 6. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
 
-> 当前接受规则是手册中的 likelihood-ratio 入门基线，不等同于论文公式的完整复现。改变选点或提议分布时，必须把 proposal ratio 纳入 Metropolis-Hastings 接受概率。
+> 接受规则已从 likelihood-ratio 入门基线升级为 p^α 目标的 Metropolis-Hastings（含 proposal 修正），并在变长玩具分布上验证收敛。改变选点分布（如难点优先）时，仍必须把新的选位概率纳入 proposal ratio。

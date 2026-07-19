@@ -96,18 +96,45 @@
 - `results/*` 和 `figures/*` 默认被 `.gitignore` 忽略；PDF 与本次文档更新尚未提交到 GitHub。
 - AutoDL 的精确基础镜像名称和环境包版本没有进入结果记录，后续正式实验应保存 `nvidia-smi`、Python、PyTorch、CUDA、Transformers 和数据集版本。
 
+## 2026-07-18：准确率下降诊断与 Power 接受规则重写
+
+### 诊断（逐题分析 5 题 paired 结果）
+
+- q1 是唯一"初始对→最终错"的翻转样例。根因：`resample_suffix` 强制新后缀与原后缀严格等长（`min_new_tokens = max_new_tokens`），接受的重写在句中被硬截断（final text 以 "So the" 结尾），`\boxed{}` 丢失，判分变 None。等长约束是上一轮修长度偏置的补丁，属于工程 artifact，不是方法失效。
+- q3 初始生成顶满 1024 token 未写完，初始就没有答案，与重采样无关。
+- q4 是模型真实错误（Carla vs Evelyn）。
+- 另发现自适应停止用 `abs(增益)≤阈值`，被拒步增益恰为 0，`patience=2` 实际等价于"连续 2 次拒绝就停"，解释了 5/5 全部提前停。
+
+### 修复
+
+- **接受规则**：目标分布 p^α、proposal 为模型自身重采样时，接受概率化简为 `(α−1)·(log p′ − log p)`；`accepts_metropolis` 增加 `alpha` 参数（默认 4.0），α=1 时全接受（即从 p 采样，符合理论）。proposal 修正使长度偏置从原理上消除。
+- **撤销等长约束**：`resample_suffix` 允许自然 EOS 终止，只限 `max_new_tokens` 上限。
+- **答案护栏**：当前文本有 `\boxed{}` 而 proposal 丢失时直接拒绝，计入 `answer_guard_rejections`，trace 增加 `answer_guard_rejected` 字段。
+- **自适应停止判据**：patience 窗口只统计**接受步**的增益；拒绝只通过独立的 `rejection_patience`（默认 4，连续拒绝阈值）触发停止。
+- **实验入口**：新增 `--alpha`、`--rejection-patience`；`--initial-max-new-tokens` 默认提高到 2048；记录 `initial_truncated` 标志。
+- **玩具验证**：新增变长序列玩具自回归模型（长度 2–5，含 EOS 概率），穷举精确分布后验证 `(α−1)Δ` 规则收敛到 p^α（TV≈0.005），而漏掉 proposal 修正的朴素 `αΔ` 规则偏差明显（TV≈0.081）。这是"论文公式核对"的可执行形式。
+
+### 验证
+
+- `python -m unittest discover -s tests -v`：17 项测试全部通过（新增 α 边界、答案护栏、拒绝流停止、power 玩具验证等 6 项）。
+- `python -m sampling.toy_validation`：三状态与变长 power 两组验证均通过。
+- GPU 5 题 paired 重跑尚未执行，为下一步动作。
+
 ## 当前未完成事项
 
+- [x] 分析初始正确但重采样后错误的样例（q1，等长截断丢失 `\boxed{}`，已修复）。
+- [x] 修正接受公式：实现 p^α 目标 + proposal 修正的 `(α−1)Δ` 规则，并用变长玩具分布验证。
+- [x] 修正自适应停止判据：接受步增益与拒绝流分开统计。
 - [ ] 人工复核 5 道题的最终答案和数学等价判分。
-- [ ] 分析初始正确但重采样后错误的样例。
-- [ ] 在 5 题上调节自适应停止阈值，避免过早停止。
-- [ ] 确认论文中的完整 proposal distribution 与 Metropolis-Hastings 接受概率。
-- [ ] 将难点优先选位安全接入真实模型主实验。
-- [ ] 运行 100 题 paired 实验并报告不确定性。
+- [ ] GPU 重跑 5 题 paired（α=4），确认 q1 不再翻转、无 `\boxed{}` 丢失、提前停止率合理。
+- [ ] 与论文原文逐项核对 proposal distribution 与接受概率（玩具验证已通过，等论文原文最终确认）。
+- [ ] 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`。
+- [ ] 将难点优先选位安全接入真实模型主实验（需把选位概率纳入 proposal ratio）。
+- [ ] 运行 100 题 paired 实验并报告不确定性（bootstrap 置信区间 / McNemar）。
 - [ ] 100 题结果稳定后再决定是否运行 500 题全量实验。
 - [ ] 固化服务器软件版本和可复现环境文件。
 - [ ] 决定哪些结果、图表和 PDF 需要纳入 Git，并提交本次更新。
 
 ## 状态结论
 
-目前完成的是 **5 题 GPU 冒烟实验，不是 100 题或 500 题完整实验**。代码流水线、配对复现、自适应停止、统计与报告均已跑通；自适应版本在小样本上节省约三分之一计算，但准确率没有改善，因此下一阶段重点是保证答案质量和验证接受公式，而不是立即扩大到全量数据。
+目前完成的是 **5 题 GPU 冒烟实验 + 准确率下降的根因修复，不是 100 题或 500 题完整实验**。逐题诊断表明 60%→40% 的准确率下降来自等长后缀截断这一工程 bug，而非方法失效；现已撤销等长约束、实现带 α 的正确 Metropolis-Hastings 接受规则（玩具分布上收敛到 p^α）、增加 `\boxed{}` 答案护栏并修正自适应停止判据。下一步是在 GPU 上重跑 5 题 paired 验证修复，然后调参并推进 100 题实验。
