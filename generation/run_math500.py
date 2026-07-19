@@ -78,6 +78,9 @@ def main() -> None:
     with output_path.open("w", encoding="utf-8") as output_file:
         for index, item in enumerate(dataset):
             started = time.perf_counter()
+            problem_seed = args.seed + index
+            backend.reseed(problem_seed)
+            sampler.reseed(problem_seed)
             prompt = PROMPT_TEMPLATE.format(problem=item["problem"])
             result = sampler.run(prompt)
             initial_answer = extract_boxed_answer(result.initial_text)
@@ -93,6 +96,7 @@ def main() -> None:
                 "runtime_seconds": round(time.perf_counter() - started, 3),
                 "model": args.model,
                 "mode": args.mode,
+                "seed": problem_seed,
                 **result.to_dict(),
             }
             output_file.write(json.dumps(record, ensure_ascii=False) + "\n")

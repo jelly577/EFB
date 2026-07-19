@@ -13,6 +13,9 @@ class GeneratedText:
 
 
 class SamplingBackend(Protocol):
+    def reseed(self, seed: int) -> None:
+        """Reset generation randomness for a reproducible problem run."""
+
     def generate_initial(self, prompt: str, max_new_tokens: int) -> GeneratedText:
         """Generate an initial continuation conditioned on *prompt*."""
 

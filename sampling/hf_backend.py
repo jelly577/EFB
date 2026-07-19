@@ -27,13 +27,16 @@ class HuggingFaceBackend:
             device_map="auto",
         )
         self.model.eval()
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
+        self.reseed(seed)
 
     @property
     def device(self) -> Any:
         return next(self.model.parameters()).device
+
+    def reseed(self, seed: int) -> None:
+        self.torch.manual_seed(seed)
+        if self.torch.cuda.is_available():
+            self.torch.cuda.manual_seed_all(seed)
 
     def _prompt_ids(self, prompt: str) -> Any:
         return self.tokenizer(

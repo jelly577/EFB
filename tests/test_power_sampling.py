@@ -117,6 +117,20 @@ class PowerSamplingTests(unittest.TestCase):
             all(step.split_token_index >= 7 for step in result.trace)
         )
 
+    def test_reseed_reproduces_split_positions(self) -> None:
+        sampler = FixedPowerSampler(
+            WindowBackend(),
+            PowerSamplingConfig(steps=5, suffix_max_new_tokens=3, seed=7),
+        )
+        first = sampler.run("prompt")
+        sampler.reseed(7)
+        second = sampler.run("prompt")
+
+        self.assertEqual(
+            [step.split_token_index for step in first.trace],
+            [step.split_token_index for step in second.trace],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

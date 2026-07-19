@@ -66,6 +66,8 @@ python -m generation.run_math500 \
 
 为避免短序列因累计 log-likelihood 较高而被错误偏好，当前基线只在最后 `suffix_max_new_tokens` 个位置内选择切分点，并强制生成与原后缀等长的替代文本，不会因为重采样预算而直接截断答案。
 
+每道题使用 `seed + 题号` 重新设置模型生成和位置选择随机数，因此 fixed 与 adaptive 会共享同一道题的初始生成，并在停止前使用一致的提议序列，可做配对比较。
+
 ## 跑自适应停止版
 
 ```bash

@@ -96,6 +96,9 @@ class FixedPowerSampler:
         self.config = config or PowerSamplingConfig()
         self.random = random.Random(self.config.seed)
 
+    def reseed(self, seed: int) -> None:
+        self.random.seed(seed)
+
     def should_stop(self, score_history: list[float]) -> bool:
         return False
 
