@@ -22,6 +22,7 @@
 | 难度分层抽题 | ✅ 完成 | `--levels 4,5` 按难度过滤，记录 `dataset_index`/`level` |
 | 20 题难题 paired（v4） | ✅ 完成 | 初始 50% 达标；零翻转（无改坏无救回）；自适应省 21.3% token / 21.2% 时间 |
 | 512 窗口难题复跑（v5） | ✅ 完成 | **首个"错→对"**：fixed 55% > 初始 50%；adaptive 因 `rejection_patience=4` 恰好错过救回 |
+| rp=8 adaptive 复跑（v6） | ✅ 完成 | 救回抓住（55% 对齐 fixed），但省算力 19.5%→4.6%——权衡两端点已量化 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
@@ -149,6 +150,22 @@ v5 主要结论：
 - **算力代价**：窗口 ×4 后总 token ×2.2、时间 ×2.2、接受率 51%→38%、提前停止率 90%→50%。当前性价比：2.2 倍算力换 +5pp（1/20 题）。
 - 乱码退化 2/20 → 1/20（q17 仍死重），与窗口大小无关，待重复惩罚或复跑判定处理。
 
+## rejection_patience=8 复跑（v6，2026-07-20）
+
+只复跑 adaptive，唯一改动 `rejection_patience 4 → 8`（steps=8 下等于关闭"连续拒绝即停"），fixed 复用 v5。
+
+| 方法 | 准确率 | 平均总 token | 相对 fixed 省 token | 接受率 | 提前停止率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 固定 8 次（v5） | 55% | 3086.9 | — | 38.1% | 0% |
+| 自适应 rp=4（v5） | 50% | 2485.0 | 19.5% | 35.3% | 50% |
+| 自适应 rp=8（v6） | **55%** | 2946.3 | **4.6%** | 40.6% | 10% |
+
+v6 主要结论：
+
+- **救回抓住了**：q14 走满 8 步，第 5 步接受救回候选，adaptive 准确率对齐 fixed（55%）；零"对→错"（v3–v6 四连）。
+- **省算力归零的代价**：512 窗口下接受率只有 ~38%，v5 adaptive 的节省几乎全部来自"连续拒绝即停"通道——正是砍掉救回的那个通道。rp=4 与 rp=8 构成权衡曲线的两个端点。
+- q14 救回在第 5 步，rp=5–6 理论上两全，但按单例调参是过拟合；权衡曲线需 100 题样本定形（计划 fixed + rp4 + rp8 三臂）。
+
 ## 实验产物
 
 ```text
@@ -173,6 +190,8 @@ results/hard20_summary.json          v4 难题实验汇总指标
 results/fixed_20_w512.jsonl          20 题难题固定版 512 窗口（v5）
 results/adaptive_20_w512.jsonl       20 题难题自适应版 512 窗口（v5）
 results/w512_summary.json            v5 512 窗口实验汇总指标
+results/adaptive_20_w512_rp8.jsonl   20 题难题自适应 512 窗口 rp=8（v6）
+results/w512_rp8_summary.json        v6 三方对比汇总指标
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
@@ -288,10 +307,9 @@ python -m evaluation.plot_results \
 
 ## 下一步
 
-1. 提高 `rejection_patience`（6–8）在 512 窗口下复跑 adaptive，验证能否抓住 q14 类救回同时保留大部分省算力。
-2. 在难题集上粗调 `alpha`（2 vs 4）、`gain_threshold`、`patience`，观察准确率与计算量。
-3. 处理乱码退化生成（重复惩罚或复跑判定），避免死重题目污染统计。
-4. 通过上述调参后运行 100 题 paired 实验，并报告 bootstrap 置信区间 / McNemar 检验。
+1. 处理乱码退化生成（重复惩罚或复跑判定），避免死重题目污染统计。
+2. 运行 100 题 paired 实验（fixed + rp4 + rp8 三臂，512 窗口），报告 bootstrap 置信区间 / McNemar 检验，画出"省算力 vs 抓救回"权衡曲线。
+3. 视 100 题结果决定是否补 `alpha`（2 vs 4）与 `gain_threshold` 对照。
 5. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
 6. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
 
