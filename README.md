@@ -19,6 +19,7 @@
 | 完整性护栏 + 官方 CoT prompt | ✅ 完成 | 未自然终止的候选直接拒绝；prompt 走 chat template |
 | 5 题新 prompt 复跑（v2） | ✅ 完成 | 暴露 base 模型"答完不停"失效模式，真实正确率 80%，判分 40% |
 | Instruct 模型基线（v3） | ✅ 完成 | 换 `Qwen2.5-Math-7B-Instruct`：判分可信、5/5 全对、q5 伪造输出消失 |
+| 难度分层抽题 | ✅ 代码就绪 | `--levels 4,5` 按难度过滤，记录 `dataset_index`/`level`；20 题实验待服务器开机 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
@@ -149,7 +150,8 @@ output/pdf/EFB_B同学_Instruct基线报告.pdf
 - `sampling/criticality.py`：用 token surprise 找出模型最不确定的位置。
 - `sampling/toy_validation.py`：三状态玩具分布验证 proposal ratio 修正；变长序列玩具模型验证 `(α−1)Δ` 收敛到 p^α。
 - `sampling/metrics.py`：记录生成、拒绝、接受、提前停止和节省尝试等开销。
-- `generation/run_math500.py`：读取 MATH-500、运行实验并写入 JSONL。
+- `generation/run_math500.py`：读取 MATH-500、运行实验并写入 JSONL；`--levels 4,5` 可按难度分层抽题。
+- `generation/selection.py`：难度过滤与确定性抽题（保留原始 `dataset_index` 便于追溯）。
 - `evaluation/answers.py`：提取 `\boxed{}` 答案并做基础格式归一化。
 - `evaluation/summarize_results.py`：汇总准确率、token、接受率和运行时间。
 - `evaluation/plot_results.py`：生成普通生成、fixed、adaptive 的比较图。

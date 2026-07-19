@@ -189,6 +189,15 @@
 - **新的实验局限**：这 5 题对 Instruct 版太简单（初始就 100%），没有余量展示重采样的准确率增益；α 调参与"Fixed > 普通"的验证必须到更大、更难的题集上做（100 题 paired 是下一步）。
 - 产出 v3 基线报告：`output/pdf/EFB_B同学_Instruct基线报告.pdf`（3 页：结论与对比图 / 汇总与 v2→v3 对照与逐题表 / 诊断故事与下一步），配图 `figures/instruct_comparison.png`。
 
+## 2026-07-19：难度分层抽题（100 题主实验第一步）
+
+- 新增 `generation/selection.py`：`parse_levels`（解析 `--levels "4,5"`，校验 1–5 范围）与 `select_problems`（按数据集顺序过滤难度并截取前 N 题，保持确定性与可追溯）。
+- `run_math500` 新增 `--levels` 参数；结果记录新增 `dataset_index`（原始数据集下标）与 `level`（难度）字段。不加 `--levels` 时行为与之前完全一致（取前 N 题）。
+- 配对种子仍按筛选后的位置（`seed + 位置`）设置，fixed/adaptive 共享同一题序即可保证 paired。
+- 新增 `tests/test_selection.py` 7 项；测试合计 **25/25 通过**。
+- 动机：前 5 题对 Instruct 无区分度（初始即 100%），需要初始正确率 40–70% 的题集来观察重采样增益。计划先跑 MATH-500 level 4–5 的前 20 题 paired（`run_v4.sh` 已备好，输出 `*_20_hard.jsonl`）。
+- 遗留：AutoDL 实例当前关机，SSH 连不上；待开机后启动 20 题实验。
+
 ## 当前未完成事项
 
 - [x] 分析初始正确但重采样后错误的样例（q1，等长截断丢失 `\boxed{}`，已修复）。
@@ -203,7 +212,8 @@
 - [x] 换用 `Qwen/Qwen2.5-Math-7B-Instruct` 重跑 5 题（v3）：判分恢复可信，5/5 全对，q5 伪造输出行为消失，新基线成立。
 - [ ] 答案补写兜底（可开关）：无 `\boxed{}` 时贪心补写答案句，触发次数计入报告（注意：解决不了"多余 boxed"型假阴性）。
 - [ ] 与论文原文逐项核对 proposal distribution 与接受概率（玩具验证已通过，等论文原文最终确认）。
-- [ ] 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`。
+- [ ] 跑 MATH-500 level 4–5 前 20 题 paired（代码就绪，等 AutoDL 开机），确认初始正确率落在 40–70% 区间。
+- [ ] 在难题集上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`。
 - [ ] 将难点优先选位安全接入真实模型主实验（需把选位概率纳入 proposal ratio）。
 - [ ] 运行 100 题 paired 实验并报告不确定性（bootstrap 置信区间 / McNemar）。
 - [ ] 100 题结果稳定后再决定是否运行 500 题全量实验。
