@@ -24,10 +24,26 @@ def main() -> None:
     import matplotlib.pyplot as plt
 
     figure, (pareto_axis, position_axis) = plt.subplots(1, 2, figsize=(12, 5))
+    ordinary_points: set[tuple[str, float, float]] = set()
     for path in args.results:
         records = load_jsonl(path)
         summary = summarize_records(records)
         label = f"{summary['mode']} ({path.stem})"
+        ordinary_key = (
+            str(summary["model"]),
+            float(summary["mean_initial_tokens"]),
+            float(summary["initial_accuracy"]),
+        )
+        if ordinary_key not in ordinary_points:
+            pareto_axis.scatter(
+                ordinary_key[1],
+                ordinary_key[2],
+                s=80,
+                marker="x",
+                linewidths=2,
+                label=f"ordinary ({ordinary_key[0]})",
+            )
+            ordinary_points.add(ordinary_key)
         pareto_axis.scatter(
             summary["mean_total_tokens"],
             summary["accuracy"],
@@ -51,7 +67,7 @@ def main() -> None:
 
     pareto_axis.set_xlabel("Mean generated tokens")
     pareto_axis.set_ylabel("Accuracy")
-    pareto_axis.set_title("Accuracy vs. compute")
+    pareto_axis.set_title("Ordinary vs. Power Sampling")
     pareto_axis.set_ylim(-0.02, 1.02)
     pareto_axis.grid(alpha=0.25)
     pareto_axis.legend()

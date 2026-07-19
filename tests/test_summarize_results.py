@@ -9,10 +9,12 @@ class SummarizeResultsTests(unittest.TestCase):
             {
                 "model": "toy",
                 "mode": "adaptive",
+                "initial_is_correct": True,
                 "is_correct": True,
                 "runtime_seconds": 1.0,
                 "metrics": {
                     "total_generated_tokens": 10,
+                    "initial_tokens": 4,
                     "rejected_tokens": 2,
                     "rejected_token_fraction": 0.2,
                     "acceptance_rate": 0.5,
@@ -23,10 +25,12 @@ class SummarizeResultsTests(unittest.TestCase):
             {
                 "model": "toy",
                 "mode": "adaptive",
+                "initial_is_correct": True,
                 "is_correct": False,
                 "runtime_seconds": 3.0,
                 "metrics": {
                     "total_generated_tokens": 20,
+                    "initial_tokens": 6,
                     "rejected_tokens": 8,
                     "rejected_token_fraction": 0.4,
                     "acceptance_rate": 0.25,
@@ -39,6 +43,8 @@ class SummarizeResultsTests(unittest.TestCase):
         summary = summarize_records(records)
 
         self.assertEqual(summary["accuracy"], 0.5)
+        self.assertEqual(summary["initial_accuracy"], 1.0)
+        self.assertEqual(summary["mean_initial_tokens"], 5.0)
         self.assertEqual(summary["mean_total_tokens"], 15.0)
         self.assertEqual(summary["mean_saved_attempts"], 2.0)
         self.assertEqual(summary["mean_runtime_seconds"], 2.0)

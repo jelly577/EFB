@@ -33,7 +33,12 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, int | float | 
         "model": str(first.get("model", "unknown")),
         "mode": str(first.get("mode", "unknown")),
         "problems": len(records),
+        "initial_accuracy": statistics.fmean(
+            bool(record.get("initial_is_correct", record["is_correct"]))
+            for record in records
+        ),
         "accuracy": statistics.fmean(bool(record["is_correct"]) for record in records),
+        "mean_initial_tokens": mean_metric("initial_tokens"),
         "mean_total_tokens": mean_metric("total_generated_tokens"),
         "mean_rejected_tokens": mean_metric("rejected_tokens"),
         "mean_rejected_token_fraction": mean_metric("rejected_token_fraction"),
@@ -60,4 +65,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -105,7 +105,7 @@ python -m evaluation.plot_results \
   results/adaptive_power_sampling.jsonl
 ```
 
-第二条命令生成 `figures/power_sampling_report.png`：左图是 token-正确率对比，右图是归一化重写位置分布。
+第二条命令生成 `figures/power_sampling_report.png`：左图同时展示普通初始生成、fixed 和 adaptive 的 token-正确率对比，右图是归一化重写位置分布。
 
 ## 后续里程碑
 
