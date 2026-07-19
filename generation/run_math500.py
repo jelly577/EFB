@@ -25,7 +25,7 @@ SYSTEM_PROMPT = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Qwen/Qwen2.5-Math-7B")
+    parser.add_argument("--model", default="Qwen/Qwen2.5-Math-7B-Instruct")
     parser.add_argument("--mode", choices=("fixed", "adaptive"), default="fixed")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--steps", type=int, default=8)
