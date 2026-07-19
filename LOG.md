@@ -129,6 +129,7 @@
 - 参数：`alpha=4.0`、`steps=8`、初始上限 2048、后缀窗口 128、seed 42 逐题配对；自适应 `min_steps=2`、`patience=2`、`rejection_patience=4`、`gain_threshold=0.01`。
 - 代码版本：`465115d`。产物：`results/fixed_5_alpha4.jsonl`、`results/adaptive_5_alpha4.jsonl`、`results/alpha4_summary.json`、`figures/alpha4_comparison.png`。
 - 报告：`output/pdf/EFB_B同学_α4修复版复跑报告.pdf`（3 页中文，生成脚本 `tmp/pdfs/build_alpha4_report.py`，逐页渲染检查通过）。
+- 人工复核材料：`results/alpha4_answer_review.md`，汇集 5 题题目、官方答案、初始/Fixed/Adaptive 答案与完整解答文本。
 
 ### 汇总结果
 

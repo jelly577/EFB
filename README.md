@@ -80,6 +80,7 @@ results/five_paired_summary.json     5 题汇总指标（修复前）
 results/fixed_5_alpha4.jsonl         5 题固定版 α=4 修复版复跑
 results/adaptive_5_alpha4.jsonl      5 题自适应版 α=4 修复版复跑
 results/alpha4_summary.json          α=4 复跑汇总指标
+results/alpha4_answer_review.md      5 题人工复核清单（题目/官方答案/模型答案/全文）
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
