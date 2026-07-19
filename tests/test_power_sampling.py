@@ -63,6 +63,11 @@ class FlatBackend(FakeBackend):
         return GeneratedText(f"flat-{self.counter}", 3)
 
 
+class WindowBackend(FlatBackend):
+    def token_count(self, text: str) -> int:
+        return 10
+
+
 class PowerSamplingTests(unittest.TestCase):
     def test_metropolis_always_accepts_higher_likelihood(self) -> None:
         self.assertTrue(accepts_metropolis(-10.0, -5.0, 0.999))
@@ -99,6 +104,18 @@ class PowerSamplingTests(unittest.TestCase):
         self.assertEqual(result.metrics.attempts, 2)
         self.assertTrue(result.metrics.stopped_early)
         self.assertEqual(result.metrics.saved_attempts, 6)
+
+    def test_split_positions_stay_inside_suffix_window(self) -> None:
+        sampler = FixedPowerSampler(
+            WindowBackend(),
+            PowerSamplingConfig(steps=20, suffix_max_new_tokens=3, seed=7),
+        )
+        result = sampler.run("prompt")
+
+        self.assertEqual(len(result.trace), 20)
+        self.assertTrue(
+            all(step.split_token_index >= 7 for step in result.trace)
+        )
 
 
 if __name__ == "__main__":

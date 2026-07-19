@@ -80,11 +80,14 @@ def main() -> None:
             started = time.perf_counter()
             prompt = PROMPT_TEMPLATE.format(problem=item["problem"])
             result = sampler.run(prompt)
+            initial_answer = extract_boxed_answer(result.initial_text)
             final_answer = extract_boxed_answer(result.final_text)
             record = {
                 "index": index,
                 "question": item["problem"],
                 "ground_truth": item["answer"],
+                "initial_answer": initial_answer,
+                "initial_is_correct": is_correct(initial_answer, item["answer"]),
                 "final_answer": final_answer,
                 "is_correct": is_correct(final_answer, item["answer"]),
                 "runtime_seconds": round(time.perf_counter() - started, 3),
@@ -96,7 +99,8 @@ def main() -> None:
             output_file.flush()
             print(
                 f"[{index + 1}/{args.limit}] "
-                f"correct={record['is_correct']} "
+                f"initial_correct={record['initial_is_correct']} "
+                f"final_correct={record['is_correct']} "
                 f"tokens={result.metrics.total_generated_tokens} "
                 f"wasted={result.metrics.rejected_tokens} "
                 f"saved_steps={result.metrics.saved_attempts}"

@@ -111,10 +111,16 @@ class HuggingFaceBackend:
             raise ValueError("split_token_index is outside the continuation")
 
         kept_prefix = continuation_ids[:, :split_token_index]
+        replacement_tokens = continuation_ids.shape[1] - split_token_index
+        if replacement_tokens > max_new_tokens:
+            raise ValueError(
+                "replacement suffix exceeds max_new_tokens; choose a later split"
+            )
         model_input = self.torch.cat((prompt_ids, kept_prefix), dim=1)
         output = self.model.generate(
             model_input,
-            max_new_tokens=max_new_tokens,
+            min_new_tokens=replacement_tokens,
+            max_new_tokens=replacement_tokens,
             do_sample=True,
             temperature=self.temperature,
             pad_token_id=self.tokenizer.eos_token_id,

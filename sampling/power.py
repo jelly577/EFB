@@ -127,7 +127,11 @@ class FixedPowerSampler:
             current_token_count = self.backend.token_count(current_text)
             if current_token_count == 0:
                 break
-            split_index = self.random.randrange(current_token_count)
+            earliest_split = max(
+                0,
+                current_token_count - self.config.suffix_max_new_tokens,
+            )
+            split_index = self.random.randrange(earliest_split, current_token_count)
             proposal = self.backend.resample_suffix(
                 prompt,
                 current_text,
