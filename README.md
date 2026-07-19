@@ -14,12 +14,13 @@
 | 难点位置评分 | ✅ 完成基础模块 | 已按 token surprise 排序，尚未接入真实模型主实验 |
 | 非均匀提议数学验证 | ✅ 完成玩具验证 | proposal ratio 修正已通过三状态分布测试 |
 | Power (p^α) 接受规则 | ✅ 完成 | `(α−1)Δ` 规则 + 答案护栏，变长玩具分布上收敛到 p^α |
-| 准确率下降根因修复 | ✅ 完成（待 GPU 复跑验证） | q1 翻转由等长后缀截断引起，已撤销等长约束 |
+| 准确率下降根因修复 | ✅ 已 GPU 复跑验证 | q1 翻转由等长后缀截断引起；修复后准确率回到 60% |
+| 5 题 α=4 修复版复跑 | ✅ 完成 | 两方法准确率 60%=初始准确率，自适应仍省 27.5% token |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
 | 5 题 GPU 冒烟实验 | ✅ 完成 | RTX 4090 24GB，fixed 与 adaptive 各 5 题 |
-| 100 题实验 | ⏳ 未运行 | 应先解决正确率下降和判分可靠性问题 |
+| 100 题实验 | ⏳ 未运行 | 正确率下降已修复；待 5–20 题调参后运行 |
 | 500 题完整实验 | ⏳ 未运行 | 当前没有全量结果，不能作最终统计结论 |
 | 难点优先真实模型实验 | ⏳ 未运行 | 需先确认完整 Metropolis-Hastings 接受概率 |
 
@@ -45,7 +46,24 @@ GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary gene
 
 这批结果只证明自适应停止在当前设置下明显减少计算，**不证明方法提升准确率**。样本仅 5 题；普通初始生成准确率为 60%，两种重采样方法均为 40%。
 
-**逐题诊断（2026-07-18）已定位准确率下降的根因**：唯一的"初始对→最终错"翻转（q1）来自等长后缀约束——重写在句中被硬截断导致 `\boxed{}` 丢失，属工程 bug 而非方法失效（q3 是初始生成 1024 token 截断，q4 是模型真实错误）。相应修复（撤销等长约束、`(α−1)Δ` 接受规则、答案护栏、停止判据修正）已进入代码，上表冒烟数字仍是修复前的旧结果，待 GPU 复跑后更新。
+**逐题诊断（2026-07-18）已定位准确率下降的根因**：唯一的"初始对→最终错"翻转（q1）来自等长后缀约束——重写在句中被硬截断导致 `\boxed{}` 丢失，属工程 bug 而非方法失效（q3 是初始生成过早自然终止、从未产生 `\boxed{}`；q4 是模型真实错误）。
+
+## 5 题 α=4 修复版复跑结果
+
+修复代码（`465115d`）在同一 4090 容器复跑，配置同上但 `alpha=4.0`、初始上限 2048、自适应新增 `rejection_patience=4`。环境：Python 3.12.3、PyTorch 2.5.1+cu124、Transformers 5.14.1（详见 `results/env_versions.txt`）。
+
+| 方法 | 准确率 | 平均总 token | 平均被拒 token | 接受率 | 平均耗时/题 | 提前停止率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 普通初始生成 | 60% | 499.4 | — | — | — | — |
+| 固定 8 次 | **60%** | 1217.2 | 495.8 | 42.5% | 32.07 秒 | 0% |
+| 自适应停止 | **60%** | 882.2 | 307.6 | 30.7% | 28.11 秒 | 100% |
+
+复跑验收结论：
+
+- **q1 不再翻转**：答案护栏拦下丢失 `\boxed{}` 的候选（每方法各 6 次），重采样不再破坏任何初始正确的答案，两方法准确率回到 60%。
+- α=4 使接受更挑剔（接受率从 ~55% 降至 30–43%），自适应节省幅度相应收窄：**省 27.5% token、12.4% 时间**，被拒 token 减少 38%。
+- 自适应平均执行 3.8/8 次，停止原因符合设计（低增益或连续 4 次拒绝），不再是"2 次拒绝即停"。
+- 5 题样本仍只是冒烟信号：α=4 未损害也未提升准确率，是否有增益需 100 题验证。
 
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
@@ -54,10 +72,15 @@ GitHub 主分支目前同步到提交 `b7c276d`（`Compare against ordinary gene
 ```text
 results/fixed_corrected.jsonl        1 题固定版校正试跑
 results/adaptive_corrected.jsonl     1 题自适应版校正试跑
-results/fixed_5_paired.jsonl         5 题固定版配对结果
-results/adaptive_5_paired.jsonl      5 题自适应版配对结果
-results/five_paired_summary.json     5 题汇总指标
-figures/five_paired_comparison.png   5 题正式对比图
+results/fixed_5_paired.jsonl         5 题固定版配对结果（修复前）
+results/adaptive_5_paired.jsonl      5 题自适应版配对结果（修复前）
+results/five_paired_summary.json     5 题汇总指标（修复前）
+results/fixed_5_alpha4.jsonl         5 题固定版 α=4 修复版复跑
+results/adaptive_5_alpha4.jsonl      5 题自适应版 α=4 修复版复跑
+results/alpha4_summary.json          α=4 复跑汇总指标
+results/env_versions.txt             服务器 Python/torch/transformers 版本
+results/env_nvidia_smi.txt           服务器 GPU 状态记录
+figures/five_paired_comparison.png   5 题正式对比图（修复前）
 figures/smoke_comparison.png         早期冒烟对比图
 output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf
 ```
@@ -165,11 +188,10 @@ python -m evaluation.plot_results \
 
 ## 下一步
 
-1. GPU 重跑 5 题 paired（α=4），确认 q1 不再翻转、无 `\boxed{}` 丢失、自适应提前停止率合理。
-2. 人工复核 5 题的预测与标准答案，确认基础判分没有把数学等价答案判错。
-3. 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`，观察准确率与计算量。
-4. 通过上述检查后运行 100 题 paired 实验，并报告均值、方差或置信区间。
-5. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
-6. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
+1. 人工复核 5 题的预测与标准答案，确认基础判分没有把数学等价答案判错。
+2. 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`，观察准确率与计算量。
+3. 通过上述检查后运行 100 题 paired 实验，并报告均值、方差或置信区间。
+4. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
+5. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
 
 > 接受规则已从 likelihood-ratio 入门基线升级为 p^α 目标的 Metropolis-Hastings（含 proposal 修正），并在变长玩具分布上验证收敛。改变选点分布（如难点优先）时，仍必须把新的选位概率纳入 proposal ratio。
