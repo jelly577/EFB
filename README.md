@@ -4,7 +4,7 @@
 
 完整实现与实验时间线见 [`LOG.md`](LOG.md)。
 
-## 当前状态（2026-07-18）
+## 当前状态（2026-07-20）
 
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
@@ -21,6 +21,7 @@
 | Instruct 模型基线（v3） | ✅ 完成 | 换 `Qwen2.5-Math-7B-Instruct`：判分可信、5/5 全对、q5 伪造输出消失 |
 | 难度分层抽题 | ✅ 完成 | `--levels 4,5` 按难度过滤，记录 `dataset_index`/`level` |
 | 20 题难题 paired（v4） | ✅ 完成 | 初始 50% 达标；零翻转（无改坏无救回）；自适应省 21.3% token / 21.2% 时间 |
+| 512 窗口难题复跑（v5） | ✅ 完成 | **首个"错→对"**：fixed 55% > 初始 50%；adaptive 因 `rejection_patience=4` 恰好错过救回 |
 | 固定版/自适应版配对复现 | ✅ 完成 | 同题共享初始生成，停止前共享提议序列 |
 | 离线单元测试 | ✅ 17/17 通过 | 2026-07-18 本地重新验证（含新增 6 项） |
 | 1 题 GPU 校正试跑 | ✅ 完成 | 用于确认等长后缀重采样修复 |
@@ -29,7 +30,7 @@
 | 500 题完整实验 | ⏳ 未运行 | 当前没有全量结果，不能作最终统计结论 |
 | 难点优先真实模型实验 | ⏳ 未运行 | 需先确认完整 Metropolis-Hastings 接受概率 |
 
-GitHub 主分支目前同步到提交 `8eda4df`（`Add completeness guard and official CoT prompt`）。GPU 结果、图表和最新 PDF 均为本地产物，受 `.gitignore` 或尚未提交状态影响；本次文档更新也需要后续提交后才会同步到远端。
+GitHub 主分支同步到最新的文档提交（本节随每次提交更新）。GPU 结果（`results/`）、图表和 PDF 均为本地产物，受 `.gitignore` 影响不在远端。
 
 ## 5 题 GPU 冒烟结果
 
@@ -130,6 +131,24 @@ v4 主要结论：
 
 详细报告：[`output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf`](output/pdf/EFB_B同学_5题GPU冒烟实验报告.pdf)
 
+## 512 窗口难题复跑（v5，2026-07-20）
+
+同一批 20 道 level 4–5 难题，唯一改动 `--suffix-max-new-tokens 128 → 512`，其余与 v4 一致。
+
+| 方法 | 准确率 | 平均总 token | 平均被拒 token | 接受率 | 平均耗时/题 | 提前停止率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 普通初始生成 | 50% | 823.3 | — | — | — | — |
+| 固定 8 次 | **55%** | 3086.9 | 1635.4 | 38.1% | 76.25 秒 | 0% |
+| 自适应停止 | 50% | 2485.0 | 1184.2 | 35.3% | 61.35 秒 | 50% |
+
+v5 主要结论：
+
+- **首个"错→对"救回**：q14（dataset_index=33，level 4）初始答错（81/208），fixed 链第 5 步接受 Δlogp=+4.38 的候选后翻成正确答案 243/625。方法首次在真实题目上展示准确率增益，验证了"128 窗口够不到上游错误"的假设方向。
+- **零"对→错"**：安全底线在 v3/v4/v5 连续成立。
+- **adaptive 恰好错过救回**：q14 前 4 步全被拒，`rejection_patience=4` 在第 4 步停止，救回发生在第 5 步。省算力（19.5% token/时间）与抓住稀有救回存在真实张力，`rejection_patience` 是下一个关键调参对象。
+- **算力代价**：窗口 ×4 后总 token ×2.2、时间 ×2.2、接受率 51%→38%、提前停止率 90%→50%。当前性价比：2.2 倍算力换 +5pp（1/20 题）。
+- 乱码退化 2/20 → 1/20（q17 仍死重），与窗口大小无关，待重复惩罚或复跑判定处理。
+
 ## 实验产物
 
 ```text
@@ -151,6 +170,9 @@ results/instruct_summary.json        v3 基线汇总指标
 results/fixed_20_hard.jsonl          20 题难题固定版（v4，level 4-5）
 results/adaptive_20_hard.jsonl       20 题难题自适应版（v4，level 4-5）
 results/hard20_summary.json          v4 难题实验汇总指标
+results/fixed_20_w512.jsonl          20 题难题固定版 512 窗口（v5）
+results/adaptive_20_w512.jsonl       20 题难题自适应版 512 窗口（v5）
+results/w512_summary.json            v5 512 窗口实验汇总指标
 results/env_versions.txt             服务器 Python/torch/transformers 版本
 results/env_nvidia_smi.txt           服务器 GPU 状态记录
 figures/five_paired_comparison.png   5 题正式对比图（修复前）
@@ -266,10 +288,11 @@ python -m evaluation.plot_results \
 
 ## 下一步
 
-1. 人工复核 5 题的预测与标准答案，确认基础判分没有把数学等价答案判错。
-2. 在 5–20 题上粗调 `alpha`、`gain_threshold`、`patience`、`rejection_patience`，观察准确率与计算量。
-3. 通过上述检查后运行 100 题 paired 实验，并报告均值、方差或置信区间。
-4. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
-5. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
+1. 提高 `rejection_patience`（6–8）在 512 窗口下复跑 adaptive，验证能否抓住 q14 类救回同时保留大部分省算力。
+2. 在难题集上粗调 `alpha`（2 vs 4）、`gain_threshold`、`patience`，观察准确率与计算量。
+3. 处理乱码退化生成（重复惩罚或复跑判定），避免死重题目污染统计。
+4. 通过上述调参后运行 100 题 paired 实验，并报告 bootstrap 置信区间 / McNemar 检验。
+5. 与论文原文逐项核对 proposal distribution 和接受概率（变长玩具验证已通过），再接入难点优先选位。
+6. 只有 100 题结果稳定后，才考虑运行 MATH-500 全量实验。
 
 > 接受规则已从 likelihood-ratio 入门基线升级为 p^α 目标的 Metropolis-Hastings（含 proposal 修正），并在变长玩具分布上验证收敛。改变选点分布（如难点优先）时，仍必须把新的选位概率纳入 proposal ratio。
