@@ -187,6 +187,8 @@ MATH-500 level 4–5 前 100 题，三臂：fixed 8 步 / adaptive rp=4 / adapti
 
 **退化复跑判定生效**：100 题中 11 题触发复跑，10 题转正常，死重率从 v5 的 10%（2/20）降到 1%（1/100）。
 
+详细报告：[`output/pdf/EFB_B同学_100题三臂实验报告.pdf`](output/pdf/EFB_B同学_100题三臂实验报告.pdf)
+
 ## 实验产物
 
 ```text
